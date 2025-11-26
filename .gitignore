@@ -1,0 +1,17 @@
+.env
+venv/
+__pycache__/
+*.pyc
+allowed_users.json
+
+# Build artifacts
+build/
+dist/
+*.spec
+
+# DLL files (bundled in exe)
+*.dll
+
+# Temporary scripts
+check_opus.py
+download_opus.py
