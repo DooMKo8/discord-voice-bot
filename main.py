@@ -279,15 +279,31 @@ async def say(interaction: discord.Interaction, text: str):
         # Get selected voice or default
         voice = guild_settings.get(interaction.guild_id, "ru-RU-DmitryNeural")
         
-        # Generate TTS with Edge-TTS
-        communicate = edge_tts.Communicate(text, voice)
-        mp3_fp = io.BytesIO()
+        print(f"🎤 Generating TTS with voice: {voice}, text: '{text[:50]}...'")
         
-        async for chunk in communicate.stream():
-            if chunk["type"] == "audio":
-                mp3_fp.write(chunk["data"])
+        # Generate TTS with Edge-TTS
+        try:
+            communicate = edge_tts.Communicate(text, voice)
+            mp3_fp = io.BytesIO()
+            
+            chunk_count = 0
+            async for chunk in communicate.stream():
+                if chunk["type"] == "audio":
+                    mp3_fp.write(chunk["data"])
+                    chunk_count += 1
+            
+            print(f"✅ Received {chunk_count} audio chunks, total size: {mp3_fp.tell()} bytes")
+            
+            if mp3_fp.tell() == 0:
+                raise Exception("No audio data received from edge-tts")
                 
-        mp3_fp.seek(0)
+            mp3_fp.seek(0)
+            
+        except Exception as tts_error:
+            print(f"❌ TTS Error: {tts_error}")
+            traceback.print_exc()
+            await interaction.followup.send(f"Ошибка генерации речи: {tts_error}", ephemeral=True)
+            return
         
         source = TTSAudioSource(mp3_fp)
         
