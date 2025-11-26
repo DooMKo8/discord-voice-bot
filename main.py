@@ -1,7 +1,7 @@
 import discord
 from discord.ext import commands
 from discord import app_commands
-import edge_tts
+from gtts import gTTS
 import io
 import os
 import asyncio
@@ -279,23 +279,24 @@ async def say(interaction: discord.Interaction, text: str):
         # Get selected voice or default
         voice = guild_settings.get(interaction.guild_id, "ru-RU-DmitryNeural")
         
-        print(f"🎤 Generating TTS with voice: {voice}, text: '{text[:50]}...'")
+        print(f"🎤 Generating TTS with gTTS, text: '{text[:50]}...'")
         
-        # Generate TTS with Edge-TTS
+        # Generate TTS with gTTS (Google Text-to-Speech)
         try:
-            communicate = edge_tts.Communicate(text, voice)
+            # gTTS uses language codes, not voice names
+            # Map common voices to languages
+            lang = 'ru'  # Default to Russian
+            
+            # Create TTS
+            tts = gTTS(text=text, lang=lang, slow=False)
             mp3_fp = io.BytesIO()
+            tts.write_to_fp(mp3_fp)
+            mp3_fp.seek(0)
             
-            chunk_count = 0
-            async for chunk in communicate.stream():
-                if chunk["type"] == "audio":
-                    mp3_fp.write(chunk["data"])
-                    chunk_count += 1
-            
-            print(f"✅ Received {chunk_count} audio chunks, total size: {mp3_fp.tell()} bytes")
+            print(f"✅ Generated audio, size: {mp3_fp.tell()} bytes")
             
             if mp3_fp.tell() == 0:
-                raise Exception("No audio data received from edge-tts")
+                raise Exception("No audio data generated")
                 
             mp3_fp.seek(0)
             
