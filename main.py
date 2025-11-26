@@ -284,14 +284,19 @@ async def say(interaction: discord.Interaction, text: str):
         # Generate TTS with gTTS (Google Text-to-Speech)
         try:
             # gTTS uses language codes, not voice names
-            # Map common voices to languages
             lang = 'ru'  # Default to Russian
             
-            # Create TTS
-            tts = gTTS(text=text, lang=lang, slow=False)
-            mp3_fp = io.BytesIO()
-            tts.write_to_fp(mp3_fp)
-            mp3_fp.seek(0)
+            # Create TTS in executor (gTTS is blocking)
+            loop = asyncio.get_event_loop()
+            
+            def generate_tts():
+                tts = gTTS(text=text, lang=lang, slow=False)
+                fp = io.BytesIO()
+                tts.write_to_fp(fp)
+                fp.seek(0)
+                return fp
+            
+            mp3_fp = await loop.run_in_executor(None, generate_tts)
             
             print(f"✅ Generated audio, size: {mp3_fp.tell()} bytes")
             
