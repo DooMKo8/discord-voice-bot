@@ -14,7 +14,8 @@ PyInstaller.__main__.run([
     '--hidden-import=discord',
     '--hidden-import=edge_tts',
     '--hidden-import=yt_dlp',
-    # Include Opus DLL
+    # Include Opus DLL and FFmpeg
     '--add-data=libopus-0.dll;.',
+    '--add-data=ffmpeg.exe;.',
     # Exclude unnecessary heavy modules if any (optional)
 ])

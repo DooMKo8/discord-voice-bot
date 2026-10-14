@@ -1,7 +1,7 @@
 import discord
 from discord.ext import commands
 from discord import app_commands
-from gtts import gTTS
+import edge_tts
 import io
 import os
 import asyncio
@@ -12,7 +12,22 @@ import yt_dlp
 import sys
 
 # Ensure ffmpeg is available
-static_ffmpeg.add_paths()
+try:
+    if getattr(sys, 'frozen', False):
+        if hasattr(sys, '_MEIPASS'):
+            os.environ["PATH"] = sys._MEIPASS + os.pathsep + os.environ["PATH"]
+        os.environ["PATH"] = os.path.dirname(sys.executable) + os.pathsep + os.environ["PATH"]
+    else:
+        os.environ["PATH"] = os.path.dirname(os.path.abspath(__file__)) + os.pathsep + os.environ["PATH"]
+except Exception:
+    pass
+
+import shutil
+if not shutil.which("ffmpeg"):
+    try:
+        static_ffmpeg.add_paths()
+    except Exception as e:
+        print(f"⚠️ Failed to add static_ffmpeg paths: {e}")
 
 load_dotenv()
 
@@ -24,28 +39,31 @@ bot = commands.Bot(command_prefix='!', intents=intents)
 
 # --- Load Opus Library (Required for Voice) ---
 if not discord.opus.is_loaded():
-    try:
-        opus_name = "libopus-0.dll"
-        opus_path = opus_name
-        
-        # Check if running in PyInstaller
-        if getattr(sys, 'frozen', False):
-            # Look in the temporary folder first
-            if hasattr(sys, '_MEIPASS'):
-                temp_path = os.path.join(sys._MEIPASS, opus_name)
-                if os.path.exists(temp_path):
-                    opus_path = temp_path
-            # Also check next to the executable
-            else:
-                 exe_path = os.path.join(os.path.dirname(sys.executable), opus_name)
-                 if os.path.exists(exe_path):
-                     opus_path = exe_path
+    candidates = []
+    if getattr(sys, 'frozen', False):
+        if hasattr(sys, '_MEIPASS'):
+            candidates.append(os.path.join(sys._MEIPASS, "libopus-0.dll"))
+        candidates.append(os.path.join(os.path.dirname(sys.executable), "libopus-0.dll"))
+    
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    candidates.append(os.path.join(script_dir, "libopus-0.dll"))
+    candidates.append(os.path.join(script_dir, "libopus-0.x64.dll"))
+    candidates.append("libopus-0.dll")
+    candidates.append("libopus-0.x64.dll")
 
-        discord.opus.load_opus(opus_path)
-        print(f"✅ Opus library loaded from: {opus_path}")
-    except Exception as e:
-        print(f"⚠️ Failed to load Opus library: {e}")
-        # Fallback to system search
+    loaded = False
+    for path in candidates:
+        if os.path.exists(path) or not os.path.isabs(path):
+            try:
+                discord.opus.load_opus(path)
+                print(f"✅ Opus library loaded from: {path}")
+                loaded = True
+                break
+            except Exception:
+                continue
+
+    if not loaded:
+        print("⚠️ Could not load Opus library from local paths, trying default search...")
 
 
 # Constants
@@ -279,29 +297,21 @@ async def say(interaction: discord.Interaction, text: str):
         # Get selected voice or default
         voice = guild_settings.get(interaction.guild_id, "ru-RU-DmitryNeural")
         
-        print(f"🎤 Generating TTS with gTTS, text: '{text[:50]}...'")
+        print(f"🎤 Generating TTS with edge-tts, voice: {voice}, text: '{text[:50]}...'")
         
-        # Generate TTS with gTTS (Google Text-to-Speech)
+        # Generate TTS with Edge-TTS
         try:
-            # gTTS uses language codes, not voice names
-            lang = 'ru'  # Default to Russian
+            communicate = edge_tts.Communicate(text, voice)
+            mp3_fp = io.BytesIO()
             
-            # Create TTS in executor (gTTS is blocking)
-            loop = asyncio.get_event_loop()
-            
-            def generate_tts():
-                tts = gTTS(text=text, lang=lang, slow=False)
-                fp = io.BytesIO()
-                tts.write_to_fp(fp)
-                fp.seek(0)
-                return fp
-            
-            mp3_fp = await loop.run_in_executor(None, generate_tts)
+            async for chunk in communicate.stream():
+                if chunk["type"] == "audio":
+                    mp3_fp.write(chunk["data"])
             
             print(f"✅ Generated audio, size: {mp3_fp.tell()} bytes")
             
             if mp3_fp.tell() == 0:
-                raise Exception("No audio data generated")
+                raise Exception("No audio data received from edge-tts")
                 
             mp3_fp.seek(0)
             
