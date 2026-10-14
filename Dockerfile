@@ -19,5 +19,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy the rest of the application code
 COPY . .
 
+# Unbuffered logs for real-time visibility in Render
+ENV PYTHONUNBUFFERED=1
+
 # Run the bot
-CMD ["python", "main.py"]
+CMD ["python", "-u", "main.py"]

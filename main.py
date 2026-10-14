@@ -50,20 +50,30 @@ if not discord.opus.is_loaded():
     candidates.append(os.path.join(script_dir, "libopus-0.x64.dll"))
     candidates.append("libopus-0.dll")
     candidates.append("libopus-0.x64.dll")
+    # Linux candidates for Docker/Render
+    candidates.append("libopus.so.0")
+    candidates.append("libopus.so")
+    candidates.append("/usr/lib/x86_64-linux-gnu/libopus.so.0")
+    candidates.append("/usr/lib/aarch64-linux-gnu/libopus.so.0")
 
     loaded = False
     for path in candidates:
         if os.path.exists(path) or not os.path.isabs(path):
             try:
                 discord.opus.load_opus(path)
-                print(f"✅ Opus library loaded from: {path}")
+                print(f"✅ Opus library loaded from: {path}", flush=True)
                 loaded = True
                 break
             except Exception:
                 continue
 
     if not loaded:
-        print("⚠️ Could not load Opus library from local paths, trying default search...")
+        try:
+            discord.opus._load_default()
+            print("✅ Opus library loaded using default loader", flush=True)
+            loaded = True
+        except Exception as e:
+            print(f"⚠️ Failed to load Opus library: {e}", flush=True)
 
 
 # Constants
@@ -275,61 +285,76 @@ async def say(interaction: discord.Interaction, text: str):
         return
 
     await interaction.response.defer(ephemeral=True)
-
-    channel = interaction.user.voice.channel
-    voice_client = interaction.guild.voice_client
-
-    if voice_client:
-        if voice_client.channel != channel:
-            await voice_client.move_to(channel)
-    else:
-        voice_client = await channel.connect()
+    print(f"👉 /say command invoked by {interaction.user.name} for text: '{text[:50]}...'", flush=True)
 
     try:
+        channel = interaction.user.voice.channel
+        voice_client = interaction.guild.voice_client
+
+        if voice_client:
+            if voice_client.channel != channel:
+                print(f"Moving to channel {channel.name}...", flush=True)
+                await voice_client.move_to(channel)
+        else:
+            print(f"Connecting to channel {channel.name}...", flush=True)
+            voice_client = await asyncio.wait_for(channel.connect(timeout=20.0), timeout=25.0)
+            print("Connected to voice channel!", flush=True)
+
         # Debug: Check ffmpeg
         import shutil
         import traceback
         if not shutil.which("ffmpeg"):
-            print("❌ CRITICAL: ffmpeg not found in PATH!")
+            print("❌ CRITICAL: ffmpeg not found in PATH!", flush=True)
             await interaction.followup.send("Ошибка: ffmpeg не найден в системе.", ephemeral=True)
             return
 
         # Get selected voice or default
         voice = guild_settings.get(interaction.guild_id, "ru-RU-DmitryNeural")
-        
-        print(f"🎤 Generating TTS with edge-tts, voice: {voice}, text: '{text[:50]}...'")
-        
-        # Generate TTS with Edge-TTS
+        print(f"🎤 Generating TTS with edge-tts, voice: {voice}, text: '{text[:50]}...'", flush=True)
+
+        # Generate TTS with Edge-TTS (with 15s timeout)
         try:
             communicate = edge_tts.Communicate(text, voice)
             mp3_fp = io.BytesIO()
-            
-            async for chunk in communicate.stream():
-                if chunk["type"] == "audio":
-                    mp3_fp.write(chunk["data"])
-            
-            print(f"✅ Generated audio, size: {mp3_fp.tell()} bytes")
-            
+
+            async def get_audio_chunks():
+                async for chunk in communicate.stream():
+                    if chunk["type"] == "audio":
+                        mp3_fp.write(chunk["data"])
+
+            await asyncio.wait_for(get_audio_chunks(), timeout=15.0)
+            print(f"✅ Generated audio, size: {mp3_fp.tell()} bytes", flush=True)
+
             if mp3_fp.tell() == 0:
                 raise Exception("No audio data received from edge-tts")
-                
+
             mp3_fp.seek(0)
-            
+
+        except asyncio.TimeoutError:
+            print("❌ TTS Error: edge-tts timed out after 15 seconds", flush=True)
+            await interaction.followup.send("❌ Ошибка: Сервис озвучки (edge-tts) не ответил вовремя. Попробуйте снова.", ephemeral=True)
+            return
         except Exception as tts_error:
-            print(f"❌ TTS Error: {tts_error}")
+            print(f"❌ TTS Error: {tts_error}", flush=True)
             traceback.print_exc()
             await interaction.followup.send(f"Ошибка генерации речи: {tts_error}", ephemeral=True)
             return
-        
+
         source = TTSAudioSource(mp3_fp)
-        
+
         if voice_client.is_playing():
             voice_client.stop()
-            
-        voice_client.play(source, after=lambda e: print(f'Player error: {e}') if e else None)
+
+        voice_client.play(source, after=lambda e: print(f'Player error: {e}', flush=True) if e else None)
         await interaction.followup.send("✅ Озвучено", ephemeral=True)
-        
+        print("✅ Voice played successfully!", flush=True)
+
+    except asyncio.TimeoutError:
+        print("❌ Error: Voice connection timed out", flush=True)
+        await interaction.followup.send("❌ Ошибка: Не удалось подключиться к голосовому каналу (таймаут соединения).", ephemeral=True)
     except Exception as e:
+        import traceback
+        print(f"❌ Error in /say: {e}", flush=True)
         traceback.print_exc()
         await interaction.followup.send(f"Ошибка ({type(e).__name__}): {e}", ephemeral=True)
 
@@ -343,17 +368,21 @@ async def play(interaction: discord.Interaction, url: str):
         return
 
     await interaction.response.defer(ephemeral=True)
-
-    channel = interaction.user.voice.channel
-    voice_client = interaction.guild.voice_client
-
-    if voice_client:
-        if voice_client.channel != channel:
-            await voice_client.move_to(channel)
-    else:
-        voice_client = await channel.connect()
+    print(f"👉 /play command invoked by {interaction.user.name} for URL: '{url}'", flush=True)
 
     try:
+        channel = interaction.user.voice.channel
+        voice_client = interaction.guild.voice_client
+
+        if voice_client:
+            if voice_client.channel != channel:
+                print(f"Moving to channel {channel.name}...", flush=True)
+                await voice_client.move_to(channel)
+        else:
+            print(f"Connecting to channel {channel.name}...", flush=True)
+            voice_client = await asyncio.wait_for(channel.connect(timeout=20.0), timeout=25.0)
+            print("Connected to voice channel!", flush=True)
+
         loop = asyncio.get_event_loop()
         
         # Use extract_flat to get playlist items quickly without downloading
@@ -555,6 +584,20 @@ async def admin_list(interaction: discord.Interaction):
         msg += f"<@{uid}>\n"
     
     await interaction.response.send_message(msg, ephemeral=True)
+
+@bot.tree.error
+async def on_app_command_error(interaction: discord.Interaction, error: app_commands.AppCommandError):
+    import traceback
+    print(f"❌ Global Slash Command Error: {error}", flush=True)
+    traceback.print_exc()
+    try:
+        msg = f"❌ Ошибка выполнения команды: {error}"
+        if interaction.response.is_done():
+            await interaction.followup.send(msg, ephemeral=True)
+        else:
+            await interaction.response.send_message(msg, ephemeral=True)
+    except Exception as e:
+        print(f"Failed to send error to Discord: {e}", flush=True)
 
 # --- Keep-Alive Server for Render ---
 from http.server import HTTPServer, BaseHTTPRequestHandler
