@@ -4,9 +4,9 @@ FROM python:3.11-slim
 # Set working directory
 WORKDIR /app
 
-# Install system dependencies (FFmpeg is required for audio, Git for yt-dlp updates)
+# Install system dependencies (FFmpeg is required for audio, Git for yt-dlp updates, libopus0 for Discord voice)
 RUN apt-get update && \
-    apt-get install -y ffmpeg git && \
+    apt-get install -y ffmpeg git libopus0 && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 

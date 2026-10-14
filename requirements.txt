@@ -1,5 +1,5 @@
 discord.py>=2.0
-edge-tts
+edge-tts>=7.3.1
 PyNaCl
 static-ffmpeg
 python-dotenv
