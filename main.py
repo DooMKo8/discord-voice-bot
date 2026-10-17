@@ -266,6 +266,22 @@ async def on_ready():
         print(f'Failed to sync commands: {e}')
     print('------')
 
+    # Start self-ping to prevent Render from sleeping
+    async def self_ping():
+        import urllib.request
+        await bot.wait_until_ready()
+        url = os.getenv("RENDER_EXTERNAL_URL", "https://discord-voice-bot-wa07.onrender.com")
+        while not bot.is_closed():
+            await asyncio.sleep(600) # every 10 minutes
+            try:
+                loop = asyncio.get_event_loop()
+                await loop.run_in_executor(None, lambda: urllib.request.urlopen(url, timeout=10))
+                print(f"🔄 Self-ping sent to {url}", flush=True)
+            except Exception as e:
+                print(f"⚠️ Self-ping note: {e}", flush=True)
+
+    bot.loop.create_task(self_ping())
+
 @bot.tree.command(name="setvoice", description="Выбрать голос озвучки (20+ вариантов)")
 @app_commands.describe(voice="Выберите голос из списка")
 @app_commands.choices(voice=VOICES)
@@ -606,8 +622,14 @@ import threading
 class KeepAliveHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200)
+        self.send_header("Content-Type", "text/plain")
         self.end_headers()
         self.wfile.write(b"Bot is running")
+
+    def do_HEAD(self):
+        self.send_response(200)
+        self.send_header("Content-Type", "text/plain")
+        self.end_headers()
 
 def run_server():
     port = int(os.getenv("PORT", 8080))
